@@ -1,0 +1,240 @@
+{
+  "actorSpecification": 1,
+  "fields": {
+    "car_offer_token": {
+      "title": "Car Offer Token",
+      "type": "string",
+      "description": "Expedia car offer token used for continuation flows."
+    },
+    "offer_heading": {
+      "title": "Offer Heading",
+      "type": "string",
+      "description": "Primary title shown for the car offer."
+    },
+    "reserve_button_text": {
+      "title": "Reserve Button Text",
+      "type": "string",
+      "description": "Reserve CTA label from listing card."
+    },
+    "accessibility_string": {
+      "title": "Accessibility String",
+      "type": "string",
+      "description": "Accessibility summary text for the card."
+    },
+    "infosite_url": {
+      "title": "Infosite URL",
+      "type": "string",
+      "description": "Expedia detail page URL for this offer."
+    },
+    "vehicle_category": {
+      "title": "Vehicle Category",
+      "type": "string",
+      "description": "Vehicle category shown in listing."
+    },
+    "vehicle_description": {
+      "title": "Vehicle Description",
+      "type": "string",
+      "description": "Vehicle description from listing card."
+    },
+    "vehicle_image_url": {
+      "title": "Vehicle Image URL",
+      "type": "string",
+      "description": "Primary vehicle image URL."
+    },
+    "vendor_image_url": {
+      "title": "Vendor Image URL",
+      "type": "string",
+      "description": "Vendor logo or image URL."
+    },
+    "vehicle_attributes": {
+      "title": "Vehicle Attributes",
+      "type": "array",
+      "description": "Vehicle attribute labels such as transmission and seats.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "review_rating": {
+      "title": "Review Rating",
+      "type": "number",
+      "description": "Numeric vendor or offer rating."
+    },
+    "review_label": {
+      "title": "Review Label",
+      "type": "string",
+      "description": "Text label such as Wonderful or Very Good."
+    },
+    "review_count": {
+      "title": "Review Count",
+      "type": "integer",
+      "description": "Total number of reviews displayed."
+    },
+    "price_lead": {
+      "title": "Lead Price",
+      "type": "string",
+      "description": "Lead price text for the offer."
+    },
+    "price_total": {
+      "title": "Total Price",
+      "type": "string",
+      "description": "Total price text for the offer."
+    },
+    "price_accessibility": {
+      "title": "Price Accessibility",
+      "type": "string",
+      "description": "Accessible price summary text."
+    },
+    "strike_through_first": {
+      "title": "Strike Through First",
+      "type": "boolean",
+      "description": "Indicates if strike-through price is shown before primary price."
+    },
+    "multi_item_price_token": {
+      "title": "Multi Item Price Token",
+      "type": "string",
+      "description": "Token used by Expedia multi-item pricing flow."
+    },
+    "fare_comparison_enabled": {
+      "title": "Fare Comparison Enabled",
+      "type": "boolean",
+      "description": "Flag indicating fare comparison mode on the card."
+    },
+    "price_summary_text": {
+      "title": "Price Summary Text",
+      "type": "string",
+      "description": "Price summary text returned for the offer."
+    },
+    "selected_accessories": {
+      "title": "Selected Accessories",
+      "type": "array",
+      "description": "Selected accessories attached to the offer token.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reward_points_selection": {
+      "title": "Reward Points Selection",
+      "type": "string",
+      "description": "Rewards mode associated with the offer."
+    },
+    "continuation_contextual_id": {
+      "title": "Continuation Contextual ID",
+      "type": "string",
+      "description": "Context ID used for follow-up API requests."
+    },
+    "search_id": {
+      "title": "Search ID",
+      "type": "string",
+      "description": "Expedia search identifier for this batch."
+    },
+    "pick_up_location": {
+      "title": "Pickup Location",
+      "type": "string",
+      "description": "Pickup location used in request."
+    },
+    "drop_off_location": {
+      "title": "Drop-off Location",
+      "type": "string",
+      "description": "Drop-off location used in request."
+    },
+    "pick_up_region": {
+      "title": "Pickup Region",
+      "type": "string",
+      "description": "Pickup region ID used in request."
+    },
+    "drop_off_region": {
+      "title": "Drop-off Region",
+      "type": "string",
+      "description": "Drop-off region ID used in request."
+    },
+    "pick_up_date": {
+      "title": "Pickup Date",
+      "type": "string",
+      "description": "Pickup date in YYYY-MM-DD format."
+    },
+    "drop_off_date": {
+      "title": "Drop-off Date",
+      "type": "string",
+      "description": "Drop-off date in YYYY-MM-DD format."
+    },
+    "pick_up_time": {
+      "title": "Pickup Time",
+      "type": "string",
+      "description": "Pickup time string used in request."
+    },
+    "drop_off_time": {
+      "title": "Drop-off Time",
+      "type": "string",
+      "description": "Drop-off time string used in request."
+    },
+    "page_index": {
+      "title": "Page Index",
+      "type": "integer",
+      "description": "Zero-based API page index."
+    },
+    "operation_name": {
+      "title": "Operation Name",
+      "type": "string",
+      "description": "GraphQL operation name used by actor."
+    },
+    "scraped_at": {
+      "title": "Scraped At",
+      "type": "string",
+      "description": "ISO timestamp when record was captured."
+    }
+  },
+  "views": {
+    "overview": {
+      "title": "Overview",
+      "transformation": {
+        "fields": [
+          "offer_heading",
+          "vehicle_category",
+          "review_rating",
+          "price_lead",
+          "price_total",
+          "pick_up_location",
+          "drop_off_location",
+          "infosite_url"
+        ]
+      },
+      "display": {
+        "component": "table",
+        "properties": {
+          "offer_heading": {
+            "label": "Offer",
+            "format": "text"
+          },
+          "vehicle_category": {
+            "label": "Vehicle",
+            "format": "text"
+          },
+          "review_rating": {
+            "label": "Rating",
+            "format": "number"
+          },
+          "price_lead": {
+            "label": "Lead Price",
+            "format": "text"
+          },
+          "price_total": {
+            "label": "Total Price",
+            "format": "text"
+          },
+          "pick_up_location": {
+            "label": "Pickup",
+            "format": "text"
+          },
+          "drop_off_location": {
+            "label": "Drop-off",
+            "format": "text"
+          },
+          "infosite_url": {
+            "label": "Infosite URL",
+            "format": "link"
+          }
+        }
+      }
+    }
+  }
+}

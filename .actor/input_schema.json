@@ -1,0 +1,47 @@
+{
+  "title": "Expedia Car Rental Scraper",
+  "description": "Extract Expedia car rental offers from carsearch pages with vehicle, pricing, and offer token details.",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "startUrl": {
+      "title": "Expedia carsearch URL",
+      "type": "string",
+      "description": "Full Expedia car rental search URL. The actor reads pickup, drop-off, date, and time from this URL and gives it highest priority.",
+      "editor": "textfield",
+      "prefill": "https://www.expedia.com/carsearch?paandi=true&fdrp=1&styp=2&dagv=1&subm=1&locn=Las%20Vegas,%20Nevada,%20United%20States%20of%20America&dpln=178276&date1=4/22/2026&date2=4/24/2026&crfrr=defaultFlex&SearchType=Place"
+    },
+    "results_wanted": {
+      "title": "Maximum offers",
+      "type": "integer",
+      "description": "Maximum number of car offers to save.",
+      "minimum": 1,
+      "default": 20,
+      "prefill": 20,
+      "editor": "number"
+    },
+    "max_pages": {
+      "title": "Maximum pages",
+      "type": "integer",
+      "description": "Maximum API page requests to perform.",
+      "minimum": 1,
+      "default": 8,
+      "prefill": 8,
+      "editor": "number"
+    },
+    "proxyConfiguration": {
+      "title": "Proxy configuration",
+      "type": "object",
+      "description": "Use residential proxy for stable cloud runs.",
+      "editor": "proxy",
+      "default": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": [
+          "RESIDENTIAL"
+        ]
+      }
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}
