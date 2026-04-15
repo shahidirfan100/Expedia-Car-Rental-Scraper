@@ -1,3 +1,5 @@
 node_modules
 /storage
 package-lock.json
+qa-200-noproxy.json
+qa-200.json

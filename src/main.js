@@ -12,6 +12,8 @@ const CLIENT_INFO = 'bernie-cars-shopping-web,pwa,us-east-1';
 const AUTO_HEAL_INPUT = true;
 const RESILIENT_MODE = true;
 const PAGE_BATCH_SIZE = 20;
+const BOOTSTRAP_ATTEMPTS = 4;
+const PAGE_ATTEMPTS = 5;
 
 const USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
@@ -336,14 +338,6 @@ function buildBootstrapHeaders({ userAgent, acceptLanguage }) {
         'user-agent': userAgent,
         'accept-language': acceptLanguage,
         accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'cache-control': 'no-cache',
-        pragma: 'no-cache',
-        'sec-fetch-dest': 'document',
-        'sec-fetch-mode': 'navigate',
-        'sec-fetch-site': 'none',
-        'sec-fetch-user': '?1',
-        'sec-gpc': '1',
-        'upgrade-insecure-requests': '1',
     };
 }
 
@@ -359,17 +353,10 @@ function buildGraphqlHeaders({
         accept: '*/*',
         'accept-language': acceptLanguage,
         'content-type': 'application/json',
-        'cache-control': 'no-cache',
-        pragma: 'no-cache',
         'Client-Info': CLIENT_INFO,
         'client-info': 'domain-redirect:true',
         'Device-User-Agent-ID': duaid,
         'x-page-id': PAGE_ID,
-        'x-apollo-operation-name': 'CarSearchLite',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin',
-        'sec-gpc': '1',
         origin: 'https://www.expedia.com',
         referer: searchUrl,
         cookie: cookieHeader,
@@ -603,7 +590,10 @@ async function withRetries({
         } catch (error) {
             lastError = error;
             if (!enabled || attempt === attempts) break;
-            await delay((attempt * 800) + randomInt(250, 650));
+            const message = cleanText(error?.message) || '';
+            const isRateLimited = /429|Too Many Requests|terminated|Timeout/i.test(message);
+            const baseDelay = isRateLimited ? (attempt * 2000) : (attempt * 800);
+            await delay(baseDelay + randomInt(350, 900));
             log.warning(`${label} failed, retrying`, {
                 attempt,
                 attempts,
@@ -627,12 +617,14 @@ async function fetchCarSearchBatchWithRecovery({
 
     return withRetries({
         label,
-        attempts: resilientMode ? 3 : 1,
+        attempts: resilientMode ? PAGE_ATTEMPTS : 1,
         enabled: resilientMode,
         task: async (attempt) => {
             if (attempt > 1) {
                 activeSession = await bootstrapSession({ searchUrl, proxyConfiguration });
             }
+
+            await delay(randomInt(450, 1100));
 
             const response = await fetchCarSearchBatch({
                 searchUrl: activeSession.finalSearchUrl,
@@ -674,7 +666,6 @@ async function fetchBootstrap({ searchUrl, userAgent, acceptLanguage, proxyUrl }
     const response = await gotScraping({
         url: searchUrl,
         headers: buildBootstrapHeaders({ userAgent, acceptLanguage }),
-        http2: false,
         proxyUrl,
         retry: { limit: 0 },
         timeout: { request: 60000 },
@@ -719,7 +710,6 @@ async function fetchCarSearchBatch({
             query: CAR_SEARCH_QUERY,
             variables,
         }),
-        http2: false,
         proxyUrl,
         retry: { limit: 0 },
         timeout: { request: 90000 },
@@ -857,7 +847,7 @@ async function main() {
 
     let session = await withRetries({
         label: 'Bootstrap request',
-        attempts: resilientMode ? 3 : 1,
+        attempts: resilientMode ? BOOTSTRAP_ATTEMPTS : 1,
         enabled: resilientMode,
         task: () => bootstrapSession({ searchUrl: initialSearchUrl, proxyConfiguration }),
     });
@@ -874,7 +864,7 @@ async function main() {
     const pickUpDate = parseDateInput(resolvedSearchInput.pickUpDate);
     const dropDate = parseDateInput(resolvedSearchInput.dropDate);
 
-    if (!pickUpDate || !dropDate || !resolvedSearchInput.pickUpLoc || !resolvedSearchInput.pickupRegion) {
+    if (!pickUpDate || !dropDate || !resolvedSearchInput.pickUpLoc) {
         throw new Error('The provided startUrl is missing required Expedia car search details. Use a full carsearch URL with location, region, and pickup/drop dates.');
     }
 
@@ -998,7 +988,7 @@ async function main() {
 
         startingIndex = healedStartingIndex;
         if (resilientMode && savedCount < resultsWanted && pageIndex < (maxPages - 1)) {
-            await delay(randomInt(250, 700));
+            await delay(randomInt(500, 1200));
         }
     }
 

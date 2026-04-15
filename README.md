@@ -37,9 +37,10 @@ Use saved offer tokens and continuation context IDs for follow-up enrichment flo
 | `startUrl` | String | No | Las Vegas Expedia carsearch URL | Full Expedia car rental search URL. The actor reads location, region, dates, and times from this URL and always prioritizes it. |
 | `results_wanted` | Integer | No | `20` | Maximum number of offers to save. |
 | `max_pages` | Integer | No | `8` | Maximum API pages to request. |
-| `auto_heal_input` | Boolean | No | `true` | Cleans wrapped, encoded, redirect-style, and alias-parameter Expedia URLs before extraction. |
-| `resilient_mode` | Boolean | No | `true` | Retries failed requests and heals stalled pagination for more stable larger runs. |
 | `proxyConfiguration` | Object | No | Apify residential proxy | Proxy settings for reliable extraction. |
+
+Built-in behavior:
+The actor now always auto-heals messy Expedia URLs and always uses resilient request recovery internally, so those switches are no longer exposed as inputs.
 
 ---
 
@@ -95,9 +96,7 @@ Each dataset item can contain:
 {
 	"startUrl": "https://www.expedia.com/carsearch?paandi=true&fdrp=1&styp=2&dagv=1&subm=1&locn=Las%20Vegas,%20Nevada,%20United%20States%20of%20America&dpln=178276&date1=4/22/2026&date2=4/24/2026&crfrr=defaultFlex&SearchType=Place",
 	"results_wanted": 20,
-	"max_pages": 8,
-	"auto_heal_input": true,
-	"resilient_mode": true
+	"max_pages": 8
 }
 ```
 
@@ -107,9 +106,7 @@ Each dataset item can contain:
 {
 	"startUrl": "  https%3A%2F%2Fwww.expedia.com%2Fcarsearch%3Flocn%3DMiami%252C%2520Florida%252C%2520United%2520States%2520of%2520America%26dpln%3D178286%26date1%3D5%2F10%2F2026%26date2%3D5%2F12%2F2026%26time1%3D0900AM%26time2%3D0800PM%26SearchType%3DPlace%26subm%3D1%26fdrp%3D1  ",
 	"results_wanted": 40,
-	"max_pages": 10,
-	"auto_heal_input": true,
-	"resilient_mode": true
+	"max_pages": 10
 }
 ```
 
@@ -119,7 +116,6 @@ Each dataset item can contain:
 {
 	"startUrl": "https://www.expedia.com/carsearch?paandi=true&fdrp=1&styp=2&dagv=1&subm=1&locn=Las%20Vegas,%20Nevada,%20United%20States%20of%20America&dpln=178276&date1=4/22/2026&date2=4/24/2026&crfrr=defaultFlex&SearchType=Place",
 	"results_wanted": 30,
-	"resilient_mode": true,
 	"proxyConfiguration": {
 		"useApifyProxy": true,
 		"apifyProxyGroups": ["RESIDENTIAL"]
@@ -172,6 +168,10 @@ Each dataset item can contain:
 ### Use Residential Proxies
 - Car rental pages can apply strong rate controls.
 - Residential routing improves consistency and lowers block risk.
+
+### Built-In Recovery
+- The actor automatically heals encoded, alias-style, redirect-wrapped, and partially incomplete Expedia URLs.
+- It also retries failed pages internally and pushes each successful page to the dataset immediately.
 
 ### Keep Date Inputs Valid
 - Use future pickup/drop-off dates inside the Expedia URL.
