@@ -14,6 +14,8 @@ const RESILIENT_MODE = true;
 const PAGE_BATCH_SIZE = 20;
 const BOOTSTRAP_ATTEMPTS = 4;
 const PAGE_ATTEMPTS = 5;
+const MIN_PICKUP_LEAD_DAYS = 2;
+const DEFAULT_RENTAL_DAYS = 2;
 
 const USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
@@ -199,6 +201,69 @@ function formatUsDate(parts) {
 function formatIsoDate(parts) {
     if (!parts) return undefined;
     return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
+function buildDatePartsFromDate(date) {
+    return {
+        year: date.getUTCFullYear(),
+        month: date.getUTCMonth() + 1,
+        day: date.getUTCDate(),
+    };
+}
+
+function partsToUtcDate(parts) {
+    if (!parts) return undefined;
+
+    const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+    if (
+        date.getUTCFullYear() !== parts.year
+        || (date.getUTCMonth() + 1) !== parts.month
+        || date.getUTCDate() !== parts.day
+    ) {
+        return undefined;
+    }
+
+    return date;
+}
+
+function addUtcDays(date, days) {
+    const next = new Date(date.getTime());
+    next.setUTCDate(next.getUTCDate() + days);
+    return next;
+}
+
+function buildMinimumPickupDate() {
+    const now = new Date();
+    const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    return addUtcDays(todayUtc, MIN_PICKUP_LEAD_DAYS);
+}
+
+function autoHealSearchDates(searchInput) {
+    const minimumPickupDate = buildMinimumPickupDate();
+    const minimumDropDate = addUtcDays(minimumPickupDate, DEFAULT_RENTAL_DAYS);
+    const currentPickUpDate = partsToUtcDate(parseDateInput(searchInput.pickUpDate));
+    const currentDropDate = partsToUtcDate(parseDateInput(searchInput.dropDate));
+
+    let nextPickUpDate = currentPickUpDate;
+    let nextDropDate = currentDropDate;
+
+    if (!nextPickUpDate || nextPickUpDate < minimumPickupDate) {
+        nextPickUpDate = minimumPickupDate;
+    }
+
+    if (!nextDropDate || nextDropDate <= nextPickUpDate) {
+        nextDropDate = addUtcDays(nextPickUpDate, DEFAULT_RENTAL_DAYS);
+    }
+
+    if (nextDropDate < minimumDropDate) {
+        nextDropDate = minimumDropDate;
+    }
+
+    return {
+        ...searchInput,
+        pickUpDate: formatUsDate(buildDatePartsFromDate(nextPickUpDate)),
+        dropDate: formatUsDate(buildDatePartsFromDate(nextDropDate)),
+    };
 }
 
 function parseTimeInput(value) {
@@ -436,6 +501,64 @@ function healSearchUrl(startUrl) {
     }
 
     return healedUrl.toString();
+}
+
+function applySearchInputToUrl(searchInput) {
+    const normalized = normalizeUrlInput(searchInput.startUrl);
+    if (!normalized) return searchInput.startUrl;
+
+    try {
+        const url = new URL(normalized);
+
+        const fieldMap = {
+            pickUpLoc: ['locn'],
+            pickupRegion: ['dpln'],
+            dropLoc: ['loc2'],
+            dropRegion: ['drid'],
+            pickUpDate: ['date1'],
+            dropDate: ['date2'],
+            pickUpTime: ['time1'],
+            dropTime: ['time2'],
+            sort: ['sort'],
+            rfrr: ['crfrr'],
+        };
+
+        for (const [field, keys] of Object.entries(fieldMap)) {
+            const value = cleanText(searchInput[field]);
+            for (const key of keys) {
+                if (value) {
+                    url.searchParams.set(key, value);
+                } else {
+                    url.searchParams.delete(key);
+                }
+            }
+        }
+
+        return url.toString();
+    } catch {
+        return searchInput.startUrl;
+    }
+}
+
+function autoHealSearchInput(searchInput) {
+    let healedInput = { ...searchInput };
+
+    if (healedInput.startUrl) {
+        healedInput.startUrl = healSearchUrl(healedInput.startUrl);
+    }
+
+    healedInput = autoHealSearchDates(healedInput);
+
+    if (healedInput.startUrl) {
+        healedInput.startUrl = applySearchInputToUrl(healedInput);
+    }
+
+    return healedInput;
+}
+
+function isRecoverableDateValidationError(apiError) {
+    const message = `${cleanText(apiError?.heading) || ''} ${cleanText(apiError?.subText) || ''}`.trim();
+    return /date on or after today|invalid date|select a date|rentals? must be between/i.test(message);
 }
 
 function buildContext(duaid) {
@@ -820,7 +943,7 @@ async function main() {
 
     const searchInput = mergeSearchInput(input);
     if (autoHealInput && searchInput.startUrl) {
-        searchInput.startUrl = healSearchUrl(searchInput.startUrl);
+        Object.assign(searchInput, autoHealSearchInput(searchInput));
     }
 
     if (!searchInput.startUrl) {
@@ -858,7 +981,7 @@ async function main() {
     });
 
     if (autoHealInput && resolvedSearchInput.startUrl) {
-        resolvedSearchInput.startUrl = healSearchUrl(resolvedSearchInput.startUrl);
+        Object.assign(resolvedSearchInput, autoHealSearchInput(resolvedSearchInput));
     }
 
     const pickUpDate = parseDateInput(resolvedSearchInput.pickUpDate);
@@ -925,6 +1048,23 @@ async function main() {
 
         if (!listings.length) {
             if (cleanText(apiError?.heading) || cleanText(apiError?.subText)) {
+                if (autoHealInput && isRecoverableDateValidationError(apiError)) {
+                    Object.assign(resolvedSearchInput, autoHealSearchInput({
+                        ...resolvedSearchInput,
+                        pickUpDate: undefined,
+                        dropDate: undefined,
+                    }));
+                    log.warning('Expedia rejected the current dates, retrying with an auto-healed future rental window.', {
+                        pickUpDate: resolvedSearchInput.pickUpDate,
+                        dropDate: resolvedSearchInput.dropDate,
+                    });
+                    startingIndex = 0;
+                    savedSearchId = '';
+                    stagnantPages = 0;
+                    pageIndex -= 1;
+                    continue;
+                }
+
                 throw new Error(`Expedia returned an empty result set: ${cleanText(apiError?.heading) || ''} ${cleanText(apiError?.subText) || ''}`.trim());
             }
             break;
