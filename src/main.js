@@ -315,16 +315,18 @@ function normalizeUrlInput(input) {
     let normalized = cleanText(input);
     if (!normalized) return undefined;
 
+    // Strip HTML entities and surrounding punctuation/quotes
     normalized = normalized
         .replace(/&amp;/gi, '&')
         .replace(/^[\s"'`<[({]+/, '')
         .replace(/[\s"'`>\])}.,;!?]+$/, '');
 
+    // Decode URL-encoded URLs (e.g. passed inside another URL param)
     const hasEncodedUrl = /^https?%3A/i.test(normalized)
         || /(?:^|[?&](?:url|u|target|dest|destination|redirect)=)https?%3A/i.test(normalized);
 
     if (hasEncodedUrl) {
-        for (let attempt = 0; attempt < 2; attempt++) {
+        for (let attempt = 0; attempt < 3; attempt++) {
             if (!/%[0-9A-Fa-f]{2}/.test(normalized)) break;
             try {
                 const decoded = decodeURIComponent(normalized);
@@ -336,18 +338,31 @@ function normalizeUrlInput(input) {
         }
     }
 
+    // Encode any bare spaces so URLs with unencoded location names survive new URL()
     if (/^(https?:\/\/|www\.)/i.test(normalized)) {
         normalized = normalized.replace(/ /g, '%20');
     }
 
-    const embeddedMatch = normalized.match(/https?:\/\/(?:www\.)?expedia\.[^\s"'<>]+/i);
+    // Strip URL fragment — Expedia never uses it for search state
+    normalized = normalized.replace(/#[^?&]*$/, '');
+
+    // Extract an embedded Expedia URL when the string wraps one inside another
+    const embeddedMatch = normalized.match(/https?:\/\/(?:[a-z0-9-]+\.)?expedia\.[a-z.]{2,10}[^\s"'<>]*/i);
     if (embeddedMatch) {
         normalized = embeddedMatch[0];
     }
 
-    if (!/^https?:\/\//i.test(normalized) && /^(?:www\.)?expedia\./i.test(normalized)) {
+    // Add https:// when the string starts with an Expedia domain
+    if (!/^https?:\/\//i.test(normalized) && /^(?:[a-z0-9-]+\.)?expedia\./i.test(normalized)) {
         normalized = `https://${normalized}`;
     }
+
+    // Normalise non-com Expedia TLDs (expedia.co.uk, expedia.ca …) → expedia.com
+    // This ensures the hostname check and /carsearch path heal work uniformly.
+    normalized = normalized.replace(
+        /^(https?:\/\/)(?:[a-z0-9-]+\.)?expedia\.[a-z.]{2,10}(?=\/|\?|$)/i,
+        '$1www.expedia.com',
+    );
 
     try {
         const outerUrl = new URL(normalized);
@@ -359,7 +374,7 @@ function normalizeUrlInput(input) {
             }
         }
     } catch {
-        // Ignore and return normalized text below.
+        // Ignore parse errors and return what we have.
     }
 
     return normalized;
@@ -460,6 +475,106 @@ function parseInfositePricing(infositeUrl) {
     }
 }
 
+function formatBrandLabel(value) {
+    const text = cleanText(value);
+    if (!text) return undefined;
+
+    const compact = text
+        .replace(/[-_]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!compact) return undefined;
+
+    return compact
+        .split(' ')
+        .map((word) => {
+            if (/^[A-Z0-9]{2,}$/.test(word)) return word;
+            return `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`;
+        })
+        .join(' ');
+}
+
+function extractBrandFromVendorImageUrl(vendorImageUrl) {
+    const imageUrl = cleanText(vendorImageUrl);
+    if (!imageUrl) return undefined;
+
+    try {
+        const url = new URL(imageUrl);
+        const fileName = cleanText(url.pathname.split('/').pop());
+        if (!fileName) return undefined;
+
+        const base = fileName
+            .replace(/\.[a-z0-9]+$/i, '')
+            .replace(/(?:^|[-_])(logo|brand|supplier|vendor)(?:$|[-_])/gi, ' ')
+            .replace(/[^a-z0-9-_ ]/gi, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        return formatBrandLabel(base);
+    } catch {
+        return undefined;
+    }
+}
+
+function extractBrandFromInfositeUrl(infositeUrl) {
+    const link = cleanText(infositeUrl);
+    if (!link) return undefined;
+
+    try {
+        const url = new URL(link);
+        for (const key of ['vendorName', 'supplierName', 'companyName', 'vendor', 'supplier']) {
+            const value = cleanText(url.searchParams.get(key));
+            if (value) return formatBrandLabel(value);
+        }
+    } catch {
+        return undefined;
+    }
+
+    return undefined;
+}
+
+function extractBrandFromOfferText(offerHeading, accessibilityString) {
+    const sources = [cleanText(accessibilityString), cleanText(offerHeading)].filter(Boolean);
+    for (const source of sources) {
+        const match = source.match(/\bfrom\s+([^,]+?)\s+at\b/i);
+        if (match) {
+            const brand = formatBrandLabel(match[1]);
+            if (brand) return brand;
+        }
+    }
+
+    return undefined;
+}
+
+function inferVendorBrand({ vendorImageUrl, infositeUrl, offerHeading, accessibilityString }) {
+    return extractBrandFromOfferText(offerHeading, accessibilityString)
+        || extractBrandFromInfositeUrl(infositeUrl)
+        || extractBrandFromVendorImageUrl(vendorImageUrl);
+}
+
+function pickStartUrlFromInput(input) {
+    if (!input || typeof input !== 'object') return undefined;
+
+    const direct = cleanText(input.startUrl || input.start_url || input.url);
+    if (direct) return direct;
+
+    const { startUrls } = input;
+    if (Array.isArray(startUrls) && startUrls.length > 0) {
+        const first = startUrls[0];
+        if (typeof first === 'string') return cleanText(first);
+        if (first && typeof first === 'object') {
+            return cleanText(first.url || first.value || first.href);
+        }
+    }
+
+    if (startUrls && typeof startUrls === 'object') {
+        return cleanText(startUrls.url || startUrls.value || startUrls.href);
+    }
+
+    return undefined;
+}
+
 function healSearchUrl(startUrl) {
     const normalized = normalizeUrlInput(startUrl);
     if (!normalized) return undefined;
@@ -558,7 +673,7 @@ function autoHealSearchInput(searchInput) {
 
 function isRecoverableDateValidationError(apiError) {
     const message = `${cleanText(apiError?.heading) || ''} ${cleanText(apiError?.subText) || ''}`.trim();
-    return /date on or after today|invalid date|select a date|rentals? must be between/i.test(message);
+    return /date on or after today|invalid date|select a date|rentals? must be between|pick-?up date|past date|date.*(?:invalid|expired|required)|(?:invalid|expired|required).*date|choose.*date|update.*date|no.*car.*available|sorry.*date/i.test(message);
 }
 
 function buildContext(duaid) {
@@ -661,10 +776,11 @@ function buildSecondaryCriteria({
 }
 
 function mergeSearchInput(input) {
-    const fromStartUrl = parseStartUrl(input.startUrl);
+    const candidateStartUrl = pickStartUrlFromInput(input);
+    const fromStartUrl = parseStartUrl(candidateStartUrl);
 
     return {
-        startUrl: normalizeUrlInput(input.startUrl) || fromStartUrl.startUrl,
+        startUrl: normalizeUrlInput(candidateStartUrl) || fromStartUrl.startUrl,
         pickUpLoc: cleanText(input.pickUpLoc || fromStartUrl.pickUpLoc),
         pickupRegion: cleanText(input.pickupRegion || fromStartUrl.pickupRegion),
         dropLoc: cleanText(input.dropLoc || fromStartUrl.dropLoc),
@@ -768,18 +884,37 @@ async function fetchCarSearchBatchWithRecovery({
 }
 
 async function loadInput() {
-    const actorInput = await Actor.getInput();
-    if (actorInput && typeof actorInput === 'object') return actorInput;
-
+    let fallbackInput = {};
     try {
         const raw = await readFile(new URL('../INPUT.json', import.meta.url), 'utf8');
         const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') {
-            log.info('Using local INPUT.json fallback because Actor input was empty.');
-            return parsed;
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+            fallbackInput = parsed;
         }
     } catch {
-        // Ignore local fallback failure.
+        // Ignore local fallback parse issues.
+    }
+
+    const actorInput = await Actor.getInput();
+    if (actorInput && typeof actorInput === 'object' && Object.keys(actorInput).length > 0) {
+        const mergedInput = {
+            ...fallbackInput,
+            ...actorInput,
+        };
+
+        const actorStartUrl = pickStartUrlFromInput(actorInput);
+        const fallbackStartUrl = pickStartUrlFromInput(fallbackInput);
+        if (!actorStartUrl && fallbackStartUrl) {
+            mergedInput.startUrl = fallbackStartUrl;
+            log.info('Actor input did not include startUrl. Filled from local INPUT.json fallback for local run compatibility.');
+        }
+
+        return mergedInput;
+    }
+
+    if (Object.keys(fallbackInput).length > 0) {
+        log.info('Using local INPUT.json fallback because Actor input was empty.');
+        return fallbackInput;
     }
 
     return {};
@@ -873,7 +1008,14 @@ function normalizeOfferRecord({
     const lead = offer?.priceSummary?.lead;
     const total = offer?.priceSummary?.total;
     const infositeUrl = ensureAbsoluteUrl(offer?.infositeURL?.relativePath || offer?.infositeURL?.value);
+    const vendorImageUrl = ensureAbsoluteUrl(offer?.vendor?.image?.url || offer?.vendor?.image?.value);
     const fallbackPrices = parseInfositePricing(infositeUrl);
+    const vendorBrand = inferVendorBrand({
+        vendorImageUrl,
+        infositeUrl,
+        offerHeading: offer?.offerHeading,
+        accessibilityString: offer?.accessibilityString,
+    });
 
     const record = {
         car_offer_token: cleanText(offer?.detailsContext?.carOfferToken),
@@ -891,7 +1033,8 @@ function normalizeOfferRecord({
         vehicle_category: cleanText(offer?.vehicle?.category),
         vehicle_description: cleanText(offer?.vehicle?.description),
         vehicle_image_url: ensureAbsoluteUrl(offer?.vehicle?.image?.url || offer?.vehicle?.image?.value),
-        vendor_image_url: ensureAbsoluteUrl(offer?.vendor?.image?.url || offer?.vendor?.image?.value),
+        vendor_image_url: vendorImageUrl,
+        vendor_brand: vendorBrand,
         vehicle_attributes: (offer?.vehicle?.attributes || [])
             .map((entry) => cleanText(entry?.text))
             .filter(Boolean),
@@ -1011,6 +1154,8 @@ async function main() {
     let startingIndex = 0;
     let stagnantPages = 0;
     let savedCount = 0;
+    let dateHealAttempts = 0;
+    const MAX_DATE_HEAL_ATTEMPTS = 3;
 
     for (let pageIndex = 0; pageIndex < maxPages && savedCount < resultsWanted; pageIndex++) {
         const variables = {
@@ -1048,13 +1193,15 @@ async function main() {
 
         if (!listings.length) {
             if (cleanText(apiError?.heading) || cleanText(apiError?.subText)) {
-                if (autoHealInput && isRecoverableDateValidationError(apiError)) {
+                if (autoHealInput && isRecoverableDateValidationError(apiError) && dateHealAttempts < MAX_DATE_HEAL_ATTEMPTS) {
+                    dateHealAttempts += 1;
                     Object.assign(resolvedSearchInput, autoHealSearchInput({
                         ...resolvedSearchInput,
                         pickUpDate: undefined,
                         dropDate: undefined,
                     }));
                     log.warning('Expedia rejected the current dates, retrying with an auto-healed future rental window.', {
+                        attempt: dateHealAttempts,
                         pickUpDate: resolvedSearchInput.pickUpDate,
                         dropDate: resolvedSearchInput.dropDate,
                     });
